@@ -2,6 +2,7 @@ package com.compoundcalc.lambda;
 
 import org.junit.Test;
 import static org.junit.Assert.*;
+import com.compoundcalc.lambda.ResultCacheService;
 
 public class CompoundInterestHandlerTest {
 
@@ -69,5 +70,28 @@ public class CompoundInterestHandlerTest {
         double expected = 1000000 * Math.pow(1 + 0.07 / 12.0, 12.0 * 30);
         expected = Math.round(expected * 100.0) / 100.0;
         assertEquals(expected, result, DELTA);
+    }
+
+    // --- Cache Key Tests ---
+
+    @Test
+    public void testCacheKeyDeterministic() {
+        String key1 = ResultCacheService.cacheKey(10000, 5.5, 10, 12);
+        String key2 = ResultCacheService.cacheKey(10000, 5.5, 10, 12);
+        assertEquals(key1, key2);
+    }
+
+    @Test
+    public void testCacheKeyDifferentInputs() {
+        String key1 = ResultCacheService.cacheKey(10000, 5.5, 10, 12);
+        String key2 = ResultCacheService.cacheKey(20000, 5.5, 10, 12);
+        assertNotEquals(key1, key2);
+    }
+
+    @Test
+    public void testCacheKeyIsSha256() {
+        String key = ResultCacheService.cacheKey(10000, 5.5, 10, 12);
+        assertEquals(64, key.length()); // SHA-256 hex = 64 chars
+        assertTrue(key.matches("[0-9a-f]+"));
     }
 }

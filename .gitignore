@@ -28,3 +28,7 @@ cdk-outputs.json
 
 # Logs
 *.log
+
+# Local dev PID files
+.local-server.pid
+.frontend.pid
