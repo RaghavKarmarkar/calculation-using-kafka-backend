@@ -4,6 +4,7 @@ import CalculatorForm from './components/CalculatorForm';
 import ResultDisplay from './components/ResultDisplay';
 import {
   connect, disconnect, sendCalculation, onResult, onError, isConnected, getWebSocketUrl,
+  getCachedResult,
 } from './api/calculationService';
 
 function App() {
@@ -47,6 +48,16 @@ function App() {
     setError(null);
     setResult(null);
     lastSubmission.current = formData;
+
+    // Check client-side cache first
+    const cached = getCachedResult(formData);
+    if (cached) {
+      const merged = { ...formData, ...cached };
+      setResult(merged);
+      setStatus('done');
+      setIsLoading(false);
+      return;
+    }
 
     if (!isConnected()) {
       try {

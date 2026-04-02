@@ -11,6 +11,8 @@ interface LambdaStackProps extends cdk.StackProps {
   vpc: ec2.IVpc;
   mskCluster: msk.CfnCluster;
   wsApiId: string;
+  cacheTableName?: string;  // Optional: DynamoDB cache table name
+  cacheTableArn?: string;   // Optional: DynamoDB cache table ARN
 }
 
 export class LambdaStack extends cdk.Stack {
@@ -42,6 +44,10 @@ export class LambdaStack extends cdk.Stack {
       securityGroups: [lambdaSg],
       environment: {
         AWS_REGION_OVERRIDE: cdk.Stack.of(this).region,
+        ...(props.cacheTableName ? {
+          CACHE_TABLE_NAME: props.cacheTableName,
+          CACHE_TTL_SECONDS: '86400', // 24 hours
+        } : {}),
       },
       tracing: lambda.Tracing.ACTIVE,
     });
@@ -76,6 +82,18 @@ export class LambdaStack extends cdk.Stack {
       ],
       resources: ['*'],
     }));
+
+    // Grant DynamoDB cache permissions (if cache table is configured)
+    if (props.cacheTableArn) {
+      this.calculatorFunction.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+        ],
+        resources: [props.cacheTableArn],
+      }));
+    }
 
     // Grant WebSocket Management API permissions (to push results back to clients)
     this.calculatorFunction.addToRolePolicy(new iam.PolicyStatement({

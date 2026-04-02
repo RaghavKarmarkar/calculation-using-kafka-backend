@@ -15,13 +15,32 @@ import java.net.URI;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 public class CompoundInterestHandler implements RequestHandler<KafkaEvent, String> {
 
     private static final Logger logger = LoggerFactory.getLogger(CompoundInterestHandler.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    public CompoundInterestHandler() {}
+    // DynamoDB cache (optional, enabled when CACHE_TABLE_NAME is set)
+    private final ResultCacheService cacheService;
+
+    public CompoundInterestHandler() {
+        String cacheTable = System.getenv("CACHE_TABLE_NAME");
+        long cacheTtl = parseLong(System.getenv("CACHE_TTL_SECONDS"), 86400); // default 24h
+        if (cacheTable != null && !cacheTable.isEmpty()) {
+            this.cacheService = new ResultCacheService(cacheTable, cacheTtl);
+            logger.info("DynamoDB cache enabled: table={}, ttl={}s", cacheTable, cacheTtl);
+        } else {
+            this.cacheService = null;
+            logger.info("DynamoDB cache disabled (CACHE_TABLE_NAME not set)");
+        }
+    }
+
+    private static long parseLong(String value, long defaultValue) {
+        if (value == null || value.isEmpty()) return defaultValue;
+        try { return Long.parseLong(value); } catch (NumberFormatException e) { return defaultValue; }
+    }
 
     @Override
     public String handleRequest(KafkaEvent kafkaEvent, Context context) {
@@ -48,16 +67,33 @@ public class CompoundInterestHandler implements RequestHandler<KafkaEvent, Strin
             event = objectMapper.readValue(payload, CalculationEvent.class);
             calculationId = event.getCalculationId();
 
-            double finalAmount = calculateCompoundInterest(
-                    event.getPrincipal(),
-                    event.getAnnualRate(),
-                    event.getYears(),
-                    event.getCompoundingFrequency()
-            );
+            // Check cache first (if enabled)
+            double finalAmount;
+            boolean cacheHit = false;
+            if (cacheService != null) {
+                Optional<Double> cached = cacheService.get(
+                        event.getPrincipal(), event.getAnnualRate(),
+                        event.getYears(), event.getCompoundingFrequency());
+                if (cached.isPresent()) {
+                    finalAmount = cached.get();
+                    cacheHit = true;
+                } else {
+                    finalAmount = calculateCompoundInterest(
+                            event.getPrincipal(), event.getAnnualRate(),
+                            event.getYears(), event.getCompoundingFrequency());
+                    cacheService.put(event.getPrincipal(), event.getAnnualRate(),
+                            event.getYears(), event.getCompoundingFrequency(), finalAmount);
+                }
+            } else {
+                finalAmount = calculateCompoundInterest(
+                        event.getPrincipal(), event.getAnnualRate(),
+                        event.getYears(), event.getCompoundingFrequency());
+            }
 
-            logger.info("Calculation [{}]: P={}, R={}, T={}, N={} => A={}",
+            logger.info("Calculation [{}]: P={}, R={}, T={}, N={} => A={} (cache={})",
                     calculationId, event.getPrincipal(), event.getAnnualRate(),
-                    event.getYears(), event.getCompoundingFrequency(), finalAmount);
+                    event.getYears(), event.getCompoundingFrequency(), finalAmount,
+                    cacheHit ? "HIT" : "MISS");
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("calculationId", calculationId);

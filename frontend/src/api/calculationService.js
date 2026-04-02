@@ -1,10 +1,45 @@
 const WS_URL = import.meta.env.VITE_WS_URL || '';
+const CACHE_PREFIX = 'compoundcalc_';
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let socket = null;
 let onResultCallback = null;
 let onErrorCallback = null;
 let onConnectCallback = null;
 let connectPromise = null;
+
+// --- Client-side localStorage cache ---
+
+function cacheKey(params) {
+  return `${CACHE_PREFIX}${params.principal}_${params.annualRate}_${params.years}_${params.compoundingFrequency}`;
+}
+
+export function getCachedResult(params) {
+  try {
+    const key = cacheKey(params);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    console.log('Cache HIT (localStorage):', key);
+    return cached.result;
+  } catch {
+    return null;
+  }
+}
+
+function cacheResult(params, result) {
+  try {
+    const key = cacheKey(params);
+    localStorage.setItem(key, JSON.stringify({ result, cachedAt: Date.now() }));
+    console.log('Cache PUT (localStorage):', key);
+  } catch {
+    // localStorage full or unavailable — ignore
+  }
+}
 
 export function getWebSocketUrl() {
   return WS_URL;
@@ -46,6 +81,15 @@ export function connect(wsUrl) {
         }
 
         if (data.status === 'COMPLETED' && onResultCallback) {
+          // Cache the result for future identical calculations
+          if (data.principal != null && data.annualRate != null) {
+            cacheResult({
+              principal: data.principal,
+              annualRate: data.annualRate,
+              years: data.years,
+              compoundingFrequency: data.compoundingFrequency,
+            }, data);
+          }
           onResultCallback(data);
         } else if (data.status === 'FAILED' && onErrorCallback) {
           onErrorCallback(new Error(data.errorMessage || 'Calculation failed'));

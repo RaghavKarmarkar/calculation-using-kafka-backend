@@ -6,6 +6,7 @@ import { KafkaStack } from '../lib/kafka-stack';
 import { BackendStack } from '../lib/backend-stack';
 import { LambdaStack } from '../lib/lambda-stack';
 import { FrontendStack } from '../lib/frontend-stack';
+import { CacheStack } from '../lib/cache-stack';
 
 const app = new cdk.App();
 
@@ -39,18 +40,27 @@ const backendStack = new BackendStack(app, `${appName}-backend`, {
 });
 backendStack.addDependency(kafkaStack);
 
-// 4. Lambda Calculator (MSK consumer → pushes results via WebSocket)
+// 4. DynamoDB Cache (optional, for DR-ready result caching)
+const cacheStack = new CacheStack(app, `${appName}-cache`, {
+  env,
+  appName,
+});
+
+// 5. Lambda Calculator (MSK consumer → pushes results via WebSocket)
 const lambdaStack = new LambdaStack(app, `${appName}-lambda`, {
   env,
   appName,
   vpc: networkStack.vpc,
   mskCluster: kafkaStack.mskCluster,
   wsApiId: backendStack.wsApiId,
+  cacheTableName: cacheStack.cacheTable.tableName,
+  cacheTableArn: cacheStack.cacheTable.tableArn,
 });
 lambdaStack.addDependency(kafkaStack);
 lambdaStack.addDependency(backendStack);
+lambdaStack.addDependency(cacheStack);
 
-// 5. Frontend (S3 + CloudFront)
+// 6. Frontend (S3 + CloudFront)
 const frontendStack = new FrontendStack(app, `${appName}-frontend`, {
   env,
   appName,
