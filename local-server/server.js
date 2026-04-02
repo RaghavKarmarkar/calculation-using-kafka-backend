@@ -14,7 +14,7 @@
 const { WebSocketServer } = require('ws');
 const { Kafka } = require('kafkajs');
 
-const WS_PORT = parseInt(process.env.WS_PORT || '8080');
+const WS_PORT = parseInt(process.env.WS_PORT || '3001');
 const KAFKA_BROKER = process.env.KAFKA_BROKER || 'localhost:9092';
 const KAFKA_TOPIC = process.env.KAFKA_TOPIC || 'calculation-requests';
 
@@ -90,7 +90,7 @@ async function startServer() {
 
   await startConsumer();
 
-  const wss = new WebSocketServer({ port: WS_PORT });
+  const wss = new WebSocketServer({ port: WS_PORT, perMessageDeflate: true });
   console.log(`[WebSocket] Server listening on ws://localhost:${WS_PORT}`);
 
   wss.on('connection', (ws) => {
@@ -146,6 +146,11 @@ async function startServer() {
     ws.on('close', () => {
       connections.delete(connectionId);
       console.log(`[WebSocket] Client disconnected: ${connectionId}`);
+    });
+
+    ws.on('error', (err) => {
+      console.error(`[WebSocket] Error on connection ${connectionId}:`, err.message);
+      connections.delete(connectionId);
     });
   });
 }

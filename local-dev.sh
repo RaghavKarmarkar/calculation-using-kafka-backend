@@ -31,16 +31,16 @@ case "${1:-start}" in
     echo -e "${YELLOW}[2/3] Starting local WebSocket server...${NC}"
     cd "$PROJECT_DIR/local-server"
     npm install --silent 2>/dev/null
-    node server.js &
+    WS_PORT=3001 node server.js &
     LOCAL_SERVER_PID=$!
     echo $LOCAL_SERVER_PID > "$PROJECT_DIR/.local-server.pid"
     sleep 2
-    echo -e "${GREEN}  ✓ WebSocket: ws://localhost:8080${NC}"
+    echo -e "${GREEN}  ✓ WebSocket: ws://localhost:3001${NC}"
 
     echo ""
     echo -e "${YELLOW}[3/3] Starting React frontend...${NC}"
     cd "$PROJECT_DIR/frontend"
-    VITE_WS_URL=ws://localhost:8080 npx vite --host &
+    VITE_WS_URL=ws://localhost:3001 npx vite --host &
     FRONTEND_PID=$!
     echo $FRONTEND_PID > "$PROJECT_DIR/.frontend.pid"
     sleep 3
@@ -50,7 +50,7 @@ case "${1:-start}" in
     echo -e "${GREEN}  Local development environment is ready!${NC}"
     echo ""
     echo -e "  Frontend:   ${GREEN}http://localhost:5173${NC}"
-    echo -e "  WebSocket:  ${GREEN}ws://localhost:8080${NC}"
+    echo -e "  WebSocket:  ${GREEN}ws://localhost:3001${NC}"
     echo -e "  Kafka:      ${GREEN}localhost:9092${NC}"
     echo -e "  DynamoDB:   ${GREEN}localhost:8000${NC}"
     echo ""
