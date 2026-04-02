@@ -1,0 +1,12 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+aws:
+  region: us-east-1
+  dynamodb:
+    table-name: CompoundInterestCalculations
+    endpoint: http://localhost:8000
+
+cors:
+  allowed-origins: http://localhost:5173,http://localhost:3000

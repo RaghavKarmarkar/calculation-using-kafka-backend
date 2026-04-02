@@ -1,0 +1,30 @@
+# Build outputs
+**/target/
+**/dist/
+**/build/
+
+# Dependencies
+**/node_modules/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# CDK
+infra/dist/
+infra/cdk.out/
+cdk-outputs.json
+
+# Logs
+*.log
