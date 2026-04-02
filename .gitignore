@@ -24,6 +24,7 @@ Thumbs.db
 # CDK
 infra/dist/
 infra/cdk.out/
+infra/cdk.out.*/
 cdk-outputs.json
 
 # Logs
