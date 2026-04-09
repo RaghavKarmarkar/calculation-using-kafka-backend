@@ -5,6 +5,7 @@
 
 # Dependencies
 **/node_modules/
+docs/node_modules/
 
 # IDE
 .idea/

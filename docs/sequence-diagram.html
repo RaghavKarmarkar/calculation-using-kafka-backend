@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Compound Interest Calculator — Sequence Diagram</title>
+  <style>
+    @page { size: A4 landscape; margin: 15mm; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #1a1a1a;
+      line-height: 1.6;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 40px;
+    }
+    h1 { color: #0f172a; font-size: 28px; border-bottom: 3px solid #3b82f6; padding-bottom: 8px; margin-bottom: 5px; }
+    h2 { color: #1e40af; font-size: 20px; margin-top: 28px; }
+    h3 { color: #334155; font-size: 16px; margin-top: 18px; }
+    .subtitle { color: #64748b; font-size: 14px; margin-bottom: 25px; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+    th { background: #1e40af; color: white; padding: 8px 12px; text-align: left; }
+    td { padding: 8px 12px; border: 1px solid #e2e8f0; }
+    tr:nth-child(even) { background: #f8fafc; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+    pre { background: #1e293b; color: #e2e8f0; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+    .step { background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 10px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; }
+    .step-num { color: #1e40af; font-weight: 700; }
+    .diagram-container { text-align: center; margin: 30px 0; page-break-before: always; }
+    .design-decisions { background: #fefce8; border: 1px solid #fde68a; padding: 14px 18px; border-radius: 8px; margin-top: 20px; }
+    .design-decisions li { margin: 6px 0; }
+    .page-break { page-break-after: always; }
+    .header-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .badge { background: #3b82f6; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <div class="header-meta">
+    <div>
+      <h1>Compound Interest Calculator</h1>
+      <div class="subtitle">Request-to-Response Flow &amp; Sequence Diagram</div>
+    </div>
+    <span class="badge">AWS Serverless Architecture</span>
+  </div>
+
+  <h2>Step-by-Step Walkthrough</h2>
+
+  <div class="step">
+    <span class="step-num">1. User Opens the App</span><br>
+    Browser loads the React SPA from <strong>CloudFront</strong> (backed by S3).
+    On mount, the frontend opens a <strong>WebSocket connection</strong> to
+    <code>wss://&lt;api-id&gt;.execute-api.us-east-1.amazonaws.com/prod</code>.
+  </div>
+
+  <div class="step">
+    <span class="step-num">2. WebSocket <code>$connect</code></span><br>
+    API Gateway receives the upgrade request and invokes the <strong>API Lambda</strong> with <code>routeKey: "$connect"</code>.
+    The Lambda logs the connection and returns <code>{ statusCode: 200 }</code>.
+    API Gateway completes the WebSocket handshake; the client is now connected.
+  </div>
+
+  <div class="step">
+    <span class="step-num">3. User Submits a Calculation</span><br>
+    The user fills in <strong>principal</strong>, <strong>annualRate</strong>, <strong>years</strong>, and <strong>compoundingFrequency</strong> and clicks "Calculate".
+    The frontend sends a WebSocket message:
+    <pre>{
+  "action": "calculate",
+  "principal": 10000,
+  "annualRate": 5.5,
+  "years": 10,
+  "compoundingFrequency": 12
+}</pre>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4. API Lambda Processes the <code>calculate</code> Route</span><br>
+    API Gateway matches <code>action: "calculate"</code> and invokes the <strong>API Lambda</strong>, which:
+    <ol>
+      <li>Extracts <code>connectionId</code> and <code>domainName/stage</code> from <code>requestContext</code></li>
+      <li>Parses and validates the request body</li>
+      <li>Generates a unique <code>calculationId</code> (UUID)</li>
+      <li>Builds the <code>wsCallbackUrl</code></li>
+      <li>Constructs a Kafka event with all inputs + <code>connectionId</code> + <code>wsCallbackUrl</code></li>
+      <li><strong>Publishes the event to Kafka</strong> topic <code>calculation-requests</code></li>
+      <li>Returns <code>{ statusCode: 200, body: { calculationId, status: "PENDING" } }</code></li>
+    </ol>
+  </div>
+
+  <div class="step">
+    <span class="step-num">5. Kafka Delivers the Message</span><br>
+    Amazon <strong>MSK</strong> receives the message on topic <code>calculation-requests</code>.
+    The MSK event source mapping triggers the <strong>Calculator Lambda</strong> with a batch of records.
+  </div>
+
+  <div class="step">
+    <span class="step-num">6. Calculator Lambda Computes the Result</span><br>
+    The Lambda deserializes each Kafka record, extracts inputs, and applies the compound interest formula:
+    <strong>A = P × (1 + r/n)<sup>(n×t)</sup></strong>.
+    Builds a result payload with <code>status: "COMPLETED"</code> and <code>finalAmount</code>.
+  </div>
+
+  <div class="step">
+    <span class="step-num">7. Calculator Lambda Pushes Result via WebSocket</span><br>
+    Using the <code>connectionId</code> and <code>wsCallbackUrl</code> from the Kafka event, the Lambda
+    calls <code>postToConnection(connectionId, resultPayload)</code> via the <strong>API Gateway Management API</strong>.
+  </div>
+
+  <div class="step">
+    <span class="step-num">8. Frontend Displays the Result</span><br>
+    The frontend's <code>onmessage</code> handler receives the JSON payload, detects <code>status: "COMPLETED"</code>,
+    and renders the <strong>ResultDisplay</strong> component with final amount, growth chart, and year-by-year breakdown.
+  </div>
+
+  <div class="step">
+    <span class="step-num">9. WebSocket <code>$disconnect</code></span><br>
+    On tab close or timeout, API Gateway sends a <code>$disconnect</code> event to the API Lambda.
+    The Lambda logs the disconnection and returns <code>{ statusCode: 200 }</code>.
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- Mermaid Sequence Diagram -->
+  <div class="diagram-container">
+    <h2>Sequence Diagram</h2>
+    <pre class="mermaid">
+sequenceDiagram
+    actor User
+    participant Browser as React Frontend&lt;br/&gt;(CloudFront + S3)
+    participant APIGW as API Gateway&lt;br/&gt;(WebSocket)
+    participant APILambda as API Lambda&lt;br/&gt;(Java 17)
+    participant Kafka as Amazon MSK&lt;br/&gt;(Kafka)
+    participant CalcLambda as Calculator Lambda&lt;br/&gt;(Java 17)
+
+    Note over User, Browser: 1. Page Load
+    User->>Browser: Opens app URL
+    Browser->>Browser: Load SPA from CloudFront/S3
+
+    Note over Browser, APIGW: 2. WebSocket Handshake
+    Browser->>APIGW: WebSocket UPGRADE wss://...
+    APIGW->>APILambda: Invoke ($connect, connectionId=C1)
+    APILambda-->>APIGW: { statusCode: 200 }
+    APIGW-->>Browser: 101 Switching Protocols
+
+    Note over User, CalcLambda: 3. Calculation Request
+    User->>Browser: Fill form and click Calculate
+    Browser->>APIGW: WS message: { action: calculate, principal, annualRate, years, freq }
+    APIGW->>APILambda: Invoke (routeKey=calculate, connectionId=C1)
+
+    Note over APILambda: 4. Validate and Publish
+    APILambda->>APILambda: Validate inputs, Generate calculationId, Build wsCallbackUrl
+    APILambda->>Kafka: Produce message to calculation-requests topic
+    Kafka-->>APILambda: ACK (partition, offset)
+    APILambda-->>APIGW: { statusCode: 200, body: { calculationId, status: PENDING } }
+
+    Note over Kafka, CalcLambda: 5. Async Processing
+    Kafka->>CalcLambda: MSK Event Source trigger (batch of records)
+
+    Note over CalcLambda: 6. Compute
+    CalcLambda->>CalcLambda: A = P x (1 + r/n)^(n x t)
+
+    Note over CalcLambda, Browser: 7. Push Result via WebSocket
+    CalcLambda->>APIGW: PostToConnection(C1, result) via Management API
+    APIGW->>Browser: WS message: { status: COMPLETED, finalAmount, ... }
+
+    Note over Browser, User: 8. Display Result
+    Browser->>Browser: Parse message, Render ResultDisplay
+    Browser->>User: Show final amount, growth chart, breakdown
+
+    Note over Browser, APIGW: 9. Disconnect (on tab close)
+    Browser->>APIGW: WebSocket CLOSE
+    APIGW->>APILambda: Invoke ($disconnect, connectionId=C1)
+    APILambda-->>APIGW: { statusCode: 200 }
+    </pre>
+  </div>
+
+  <h2>Component Summary</h2>
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Technology</th><th>Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Frontend</strong></td><td>React + Vite + TailwindCSS</td><td>SPA served from CloudFront/S3; WebSocket client</td></tr>
+      <tr><td><strong>API Gateway</strong></td><td>AWS WebSocket API</td><td>Routes $connect, $disconnect, calculate; manages connections</td></tr>
+      <tr><td><strong>API Lambda</strong></td><td>Java 17, Kafka Producer</td><td>Validates input, publishes to Kafka with WS callback info</td></tr>
+      <tr><td><strong>Amazon MSK</strong></td><td>Apache Kafka 3.5.1</td><td>Decouples request ingestion from computation</td></tr>
+      <tr><td><strong>Calculator Lambda</strong></td><td>Java 17, MSK Consumer</td><td>Computes compound interest, pushes result via WS Management API</td></tr>
+      <tr><td><strong>CloudFront + S3</strong></td><td>AWS CDN + Object Storage</td><td>Serves static frontend assets globally</td></tr>
+    </tbody>
+  </table>
+
+  <div class="design-decisions">
+    <h2 style="margin-top: 0;">Key Design Decisions</h2>
+    <ul>
+      <li><strong>Kafka as decoupler</strong>: The API Lambda returns immediately after publishing, keeping WebSocket response times fast. The heavy computation happens asynchronously.</li>
+      <li><strong>WebSocket push (not polling)</strong>: The Calculator Lambda pushes results directly to the client's open connection — no polling, no DynamoDB, no wasted API calls.</li>
+      <li><strong>Stateless Lambdas</strong>: No shared state between Lambdas. The <code>connectionId</code> and <code>wsCallbackUrl</code> travel through Kafka so the Calculator Lambda knows where to send results.</li>
+    </ul>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'default', sequence: { mirrorActors: false, actorMargin: 50, messageMargin: 40 } });
+  </script>
+</body>
+</html>
